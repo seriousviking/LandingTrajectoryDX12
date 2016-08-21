@@ -46,7 +46,7 @@ set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${LandingTrajectoryDX12_SOURCE_DIR}/
 set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG ${LandingTrajectoryDX12_SOURCE_DIR}/build-cmake-debug-${BIT_SUFFIX} )
 
 if (MSVC)
-	add_definitions( -D_WIN32_WINNT=0x0501 /MP )
+	add_definitions( -D_WIN32_WINNT=0x0501 -DUNICODE /MP )
 	if (BUILD_RELEASE)
 		add_definitions( /MT )
 	else()
@@ -61,14 +61,28 @@ include_directories(${WINSDK_INCLUDE_PATH})
 include_directories(${WINSDK_INCLUDE_SHARED_PATH})
 link_directories(${WINSDK_LIB_PATH})
 
+
 set (main_SRC
 	src/main.cpp
-	src/common.h
 	src/Application.h
 	src/Application.cpp
+	src/InputHandler.h
+	src/InputHandler.cpp
+	src/GraphicsManager.h
+	src/GraphicsManager.cpp
+	src/D3DManager.h
+	src/D3DManager.cpp
 )
-
 source_group( src FILES ${main_SRC} )
 
-add_executable (LandingTrajectoryDX12 ${main_SRC})
+set (types_SRC
+	src/Types/Types.h
+)
+if (MSVC)
+	source_group( src\\Types ${types_SRC} )
+else()
+	source_group( src/Types ${types_SRC} )
+endif()
+
+add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${types_SRC})
 target_link_libraries (LandingTrajectoryDX12 d3d12 dxgi d3dcompiler)
