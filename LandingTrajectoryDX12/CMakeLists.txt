@@ -75,14 +75,16 @@ set (main_SRC
 )
 source_group( src FILES ${main_SRC} )
 
-set (types_SRC
-	src/Types/Types.h
+set (utils_SRC
+	src/Utils/Types.h
+	src/Utils/Log.h
+	src/Utils/Log.cpp
 )
 if (MSVC)
-	source_group( src\\Types ${types_SRC} )
+	source_group( src\\Utils FILES ${utils_SRC} )
 else()
-	source_group( src/Types ${types_SRC} )
+	source_group( src/Utils FILES ${utils_SRC} )
 endif()
 
-add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${types_SRC})
+add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${utils_SRC})
 target_link_libraries (LandingTrajectoryDX12 d3d12 dxgi d3dcompiler)

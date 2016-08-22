@@ -12,6 +12,8 @@
 #include <string>
 #include <map>
 #include <assert.h>
+#include <iostream>
+#include <cstdio>
 
 typedef int			 Int;
 typedef unsigned int uInt;
@@ -23,4 +25,5 @@ template<class T> using SharedPtr = std::shared_ptr<T>;
 template<class T> using WeakPtr = std::weak_ptr<T>;
 template<class T> using UniquePtr = std::unique_ptr<T>;
 using String = std::string;
+using WString = std::wstring;
 template<class Key, class Value> using Map = std::map<Key, Value>;

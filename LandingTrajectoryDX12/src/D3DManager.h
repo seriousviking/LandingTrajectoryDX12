@@ -9,7 +9,7 @@
 #include <dxgi1_5.h>
 
 #include "Application.h" // for HWND dependency
-#include "Types/Types.h"
+#include "Utils/Types.h"
 
 class D3DManager
 {
@@ -33,10 +33,11 @@ public:
 
 private:
 	Def _def;
+	WString _videoCardDescription;
+	uInt _dedicatedVideoMemorySizeMBs;
 
 	ID3D12Device* _device;
 	ID3D12CommandQueue* _commandQueue;
-	Vector<char> _videoCardDescription;
 	IDXGISwapChain3* _swapChain;
 	ID3D12DescriptorHeap* _renderTargetViewHeap;
 	Vector<ID3D12Resource*> _backBufferRenderTargets;
