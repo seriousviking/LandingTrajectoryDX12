@@ -4,11 +4,16 @@
 // Created by seriousviking at 2016.08.21 22:10
 // see license details in LICENSE.md file
 //-----------------------------------------------------------------------------
+// sources:
+// https://digitalerr0r.wordpress.com/2015/08/19/quickstart-directx-12-programming/
+// http://www.rastertek.com/dx12tut03.html
+// https://software.intel.com/en-us/articles/tutorial-migrating-your-apps-to-directx-12-part-3
+// http://www.braynzarsoft.net/viewtutorial/q16390-04-directx-12-braynzar-soft-tutorials
 #pragma once
 #include <d3d12.h>
 #include <dxgi1_5.h>
+#include <windef.h> // for HWND dependency
 
-#include "Application.h" // for HWND dependency
 #include "Utils/Types.h"
 
 class D3DManager
@@ -29,10 +34,26 @@ public:
 
 	bool init(const Def &def);
 	void free();
+	bool update();
 	bool render();
 
 private:
+	bool createDeviceDependentResources();
+	bool createWindowSizeDependentResources();
+
+private:
+	bool createDevice();
+	bool createSwapchain();
+	bool createRenderTargetViews();
+	bool createCommandList();
+	bool createSyncEvent();
+
+	bool updatePipeline();
+	bool waitForPreviousFrame();
+
+private:
 	Def _def;
+	UINT _frameBufferCount;
 	WString _videoCardDescription;
 	uInt _dedicatedVideoMemorySizeMBs;
 
@@ -40,12 +61,15 @@ private:
 	ID3D12CommandQueue* _commandQueue;
 	IDXGISwapChain3* _swapChain;
 	ID3D12DescriptorHeap* _renderTargetViewHeap;
-	Vector<ID3D12Resource*> _backBufferRenderTargets;
 	unsigned int _bufferIndex;
-	ID3D12CommandAllocator* _commandAllocator;
 	ID3D12GraphicsCommandList* _commandList;
 	ID3D12PipelineState* _pipelineState;
-	ID3D12Fence* _fence;
+
 	HANDLE _fenceEvent;
-	unsigned long long _fenceValue;
+
+	Vector<ID3D12Resource*> _backBufferRenderTargets;
+	Vector<ID3D12CommandAllocator*> _commandAllocators;
+	Vector<ID3D12Fence*> _fences;
+	Vector<UINT64> _fenceValues;
+
 };

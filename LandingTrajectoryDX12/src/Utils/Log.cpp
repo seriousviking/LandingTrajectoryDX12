@@ -22,15 +22,17 @@ WString s2ws(const String& s)
 
 void PrintLog(const String &text)
 {
+	String textWithLine = text + '\n';
 #ifdef UNICODE
-	WString ws = s2ws(text);
+	WString ws = s2ws(textWithLine);
 	OutputDebugString(ws.c_str());
 #else
-	OutputDebugString(text.c_str());
+	OutputDebugString(textWithLine.c_str());
 #endif
 }
 
 void PrintLog(const WString &text)
 {
-	OutputDebugStringW(text.c_str());
+	WString textWithLine = text + L'\n';
+	OutputDebugStringW(textWithLine.c_str());
 }

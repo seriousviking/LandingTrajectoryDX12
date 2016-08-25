@@ -46,7 +46,8 @@ set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${LandingTrajectoryDX12_SOURCE_DIR}/
 set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG ${LandingTrajectoryDX12_SOURCE_DIR}/build-cmake-debug-${BIT_SUFFIX} )
 
 if (MSVC)
-	add_definitions( -D_WIN32_WINNT=0x0501 -DUNICODE /MP )
+	add_definitions( -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -DUNICODE /MP )
+	add_definitions( -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS -D_SCL_SECURE_NO_WARNINGS )
 	if (BUILD_RELEASE)
 		add_definitions( /MT )
 	else()
@@ -77,6 +78,7 @@ source_group( src FILES ${main_SRC} )
 
 set (utils_SRC
 	src/Utils/Types.h
+	src/Utils/Macro.h
 	src/Utils/Log.h
 	src/Utils/Log.cpp
 )

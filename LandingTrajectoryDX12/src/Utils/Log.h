@@ -20,7 +20,7 @@ template<typename ... Args>
 String stringFormatA(const String& format, Args ... args)
 {
 	size_t size = snprintf(nullptr, 0, format.c_str(), args ...) + 1; // Extra space for '\0'
-	unique_ptr<char[]> buf(new char[size]);
+	UniquePtr<char[]> buf(new char[size]);
 	snprintf(buf.get(), size, format.c_str(), args ...);
 	return String(buf.get(), buf.get() + size - 1); // We don't want the '\0' inside
 }
@@ -28,9 +28,9 @@ String stringFormatA(const String& format, Args ... args)
 template<typename ... Args>
 WString stringFormatW(const WString& format, Args ... args)
 {
-	size_t size = wsnprintf(nullptr, 0, format.c_str(), args ...) + 1; // Extra space for '\0'
-	unique_ptr<wchar_t[]> buf(new wchar_t[size]);
-	wsnprintf(buf.get(), size, format.c_str(), args ...);
+	size_t size = _snwprintf(nullptr, 0, format.c_str(), args ...) + 1; // Extra space for '\0' //wsnprintf
+	UniquePtr<wchar_t[]> buf(new wchar_t[size]);
+	_snwprintf(buf.get(), size, format.c_str(), args ...);
 	return WString(buf.get(), buf.get() + size - 1); // We don't want the '\0' inside
 }
 
@@ -38,14 +38,14 @@ WString stringFormatW(const WString& format, Args ... args)
 template <typename ... Args>
 void Log(const String& format, Args ... args)
 {
-	String text = stringFormatA(format, args);
+	String text = stringFormatA(format, args ...);
 	PrintLog(text);
 }
 
 template <typename ... Args>
 void Log(const WString& format, Args ... args)
 {
-	WString text = stringFormatA(format, args);
+	WString text = stringFormatW(format, args ...);
 	PrintLog(text);
 }
 
