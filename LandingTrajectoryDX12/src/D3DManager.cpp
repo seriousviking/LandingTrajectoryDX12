@@ -17,7 +17,7 @@ namespace
 }
 
 D3DManager::D3DManager() :
-	_frameBufferCount(2),
+	_frameBufferCount(3),
 	_dedicatedVideoMemorySizeMBs(0),
 	_device(nullptr),
 	_commandQueue(nullptr),
@@ -68,13 +68,14 @@ bool D3DManager::init(const Def &def)
 
 void D3DManager::free()
 {
-	// wait for the gpu to finish all frames
-	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount - 1; ++bufferIndex)
-	{
-		//_bufferIndex = bufferIndex;
-		waitForPreviousFrame();
-		////_bufferIndex = (_bufferIndex + 1) % _frameBufferCount;
-	}
+	// wait for the gpu to finish the last frame
+	// TODO: check if correct
+	waitForPreviousFrame();
+	//for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
+	//{
+	//	waitForPreviousFrame();
+	//}
+
 	// get swapchain out of full screen before exiting
 	if (_swapChain)
 	{
