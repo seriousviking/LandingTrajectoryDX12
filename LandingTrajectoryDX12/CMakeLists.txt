@@ -88,5 +88,24 @@ else()
 	source_group( src/Utils FILES ${utils_SRC} )
 endif()
 
-add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${utils_SRC})
+set (DIRECTXMATH_PATH "../Lib/DirectXMath")
+set (DirectXMath
+	${DIRECTXMATH_PATH}/Inc/DirectXCollision.h
+	${DIRECTXMATH_PATH}/Inc/DirectXColors.h
+	${DIRECTXMATH_PATH}/Inc/DirectXMath.h
+	${DIRECTXMATH_PATH}/Inc/DirectXPackedVector.h
+	${DIRECTXMATH_PATH}/Inc/DirectXCollision.inl
+	${DIRECTXMATH_PATH}/Inc/DirectXMathConvert.inl
+	${DIRECTXMATH_PATH}/Inc/DirectXMathMatrix.inl
+	${DIRECTXMATH_PATH}/Inc/DirectXMathMisc.inl
+	${DIRECTXMATH_PATH}/Inc/DirectXMathVector.inl
+	${DIRECTXMATH_PATH}/Inc/DirectXPackedVector.inl
+)
+if (MSVC)
+	source_group( Lib\\DirectXMath FILES ${DirectXMath} )
+else()
+	source_group( Lib/DirectXMath FILES ${DirectXMath} )
+endif()
+
+add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${utils_SRC} ${DirectXMath})
 target_link_libraries (LandingTrajectoryDX12 d3d12 dxgi d3dcompiler)
