@@ -37,17 +37,23 @@ public:
 	bool update();
 	bool render();
 
-private:
-	bool createDeviceDependentResources();
-	bool createWindowSizeDependentResources();
+//private:
+//	bool createDeviceDependentResources();
+//	bool createWindowSizeDependentResources();
 
 private:
+	// initialization methods
 	bool createDevice();
 	bool createSwapchain();
 	bool createRenderTargetViews();
 	bool createCommandList();
 	bool createSyncEvent();
 
+	bool createRootSignature();
+	bool createPipelineState();
+	bool createBuffers();
+	void prepareViewport();
+	// update/draw methods
 	bool updatePipeline();
 	bool waitForPreviousFrame();
 
@@ -63,7 +69,7 @@ private:
 	ID3D12DescriptorHeap* _renderTargetViewHeap;
 	unsigned int _bufferIndex;
 	ID3D12GraphicsCommandList* _commandList;
-	ID3D12PipelineState* _pipelineState;
+	DXGI_SAMPLE_DESC _sampleDesc;
 
 	HANDLE _fenceEvent;
 
@@ -72,4 +78,10 @@ private:
 	Vector<ID3D12Fence*> _fences;
 	Vector<UINT64> _fenceValues;
 
+	ID3D12PipelineState* _pipelineState;
+	ID3D12RootSignature* _rootSignature;
+	D3D12_VIEWPORT _viewport;
+	D3D12_RECT _scissorRect;
+	ID3D12Resource* _vertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 };

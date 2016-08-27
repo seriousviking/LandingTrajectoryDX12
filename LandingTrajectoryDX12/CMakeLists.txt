@@ -1,6 +1,6 @@
 #CMake project
 project(LandingTrajectoryDX12)
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.1)
 
 #project version
 set(LandingTrajectoryDX12_VERSION_MAJOR 0)
@@ -32,9 +32,9 @@ else()
 endif(CMAKE_SIZEOF_VOID_P EQUAL 8)
 
 set(WINSDK_PATH "c:/Program Files (x86)/Windows Kits/10")
-set(WINSDK_INCLUDE_PATH "${WINSDK_PATH}/Include/10.0.10586.0/um")
-set(WINSDK_INCLUDE_SHARED_PATH "${WINSDK_PATH}/Include/10.0.10586.0/shared")
-set(WINSDK_LIB_PATH "${WINSDK_PATH}/Lib/10.0.10586.0/um/${BIT_SUFFIX}")
+set(WINSDK_INCLUDE_PATH "${WINSDK_PATH}/Include/10.0.14393.0/um")
+set(WINSDK_INCLUDE_SHARED_PATH "${WINSDK_PATH}/Include/10.0.14393.0/shared")
+set(WINSDK_LIB_PATH "${WINSDK_PATH}/Lib/10.0.14393.0/um/${BIT_SUFFIX}")
 
 message("WINSDK_LIB_PATH is ${WINSDK_LIB_PATH}")
 
@@ -62,6 +62,8 @@ include_directories(${WINSDK_INCLUDE_PATH})
 include_directories(${WINSDK_INCLUDE_SHARED_PATH})
 link_directories(${WINSDK_LIB_PATH})
 
+# sources
+# main source files placed in root "src" folder
 
 set (main_SRC
 	src/main.cpp
@@ -73,20 +75,26 @@ set (main_SRC
 	src/GraphicsManager.cpp
 	src/D3DManager.h
 	src/D3DManager.cpp
+	src/GraphicsCommon.h
 )
 source_group( src FILES ${main_SRC} )
 
+# common sources
 set (utils_SRC
 	src/Utils/Types.h
 	src/Utils/Macro.h
 	src/Utils/Log.h
 	src/Utils/Log.cpp
+	src/Utils/FileUtils.h
+	src/Utils/FileUtils.cpp
 )
 if (MSVC)
 	source_group( src\\Utils FILES ${utils_SRC} )
 else()
 	source_group( src/Utils FILES ${utils_SRC} )
 endif()
+
+# add DirectXMath library
 
 set (DIRECTXMATH_PATH "../Lib/DirectXMath")
 set (DirectXMath
@@ -106,6 +114,48 @@ if (MSVC)
 else()
 	source_group( Lib/DirectXMath FILES ${DirectXMath} )
 endif()
+include_directories(${DIRECTXMATH_PATH})
 
-add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${utils_SRC} ${DirectXMath})
+set (D3DHELPERS_PATH "../Lib/D3DHelpers")
+set (D3DHelpers
+	${D3DHELPERS_PATH}/d3dx12.h
+)
+if (MSVC)
+	source_group( Lib\\D3DHelpers FILES ${D3DHelpers} )
+else()
+	source_group( Lib/D3DHelpers FILES ${D3DHelpers} )
+endif()
+include_directories(${D3DHELPERS_PATH})
+
+# add shader files to group
+set (ShadersPath "data/shaders")
+set (VertexShader_Files
+	${ShadersPath}/simpleVS.hlsl
+)
+set (PixelShader_Files
+	${ShadersPath}/simplePS.hlsl
+)
+set (ShaderFiles
+	${VertexShader_Files}
+	${PixelShader_Files}
+)
+if (MSVC)
+	source_group( data\\shaders FILES ${ShaderFiles} )
+else()
+	source_group( data/shaders FILES ${ShaderFiles} )
+endif()
+
+set_property(SOURCE ${VertexShader_Files} PROPERTY VS_SHADER_TYPE Vertex)
+set_property(SOURCE ${VertexShader_Files} PROPERTY VS_SHADER_ENTRYPOINT mainVS)
+set_property(SOURCE ${VertexShader_Files} PROPERTY VS_SHADER_MODEL 5.0)
+# do not add any properties for now but keep them in mind
+#set_property(SOURCE ${VertexShader_Files} PROPERTY VS_SHADER_FLAGS "/DFLAGS_ADDED /Fh \"$(OutDir)%(Filename).h\"")
+set_property(SOURCE ${PixelShader_Files} PROPERTY VS_SHADER_TYPE Pixel)
+set_property(SOURCE ${PixelShader_Files} PROPERTY VS_SHADER_ENTRYPOINT mainPS)
+set_property(SOURCE ${PixelShader_Files} PROPERTY VS_SHADER_MODEL 5.0)
+# do not add any properties for now but keep them in mind
+#set_property(SOURCE ${PixelShader_Files} PROPERTY VS_SHADER_FLAGS "/DFLAGS_ADDED /Fh \"$(OutDir)%(Filename).h\"")
+
+# executable and linked libraries
+add_executable (LandingTrajectoryDX12 WIN32 ${main_SRC} ${utils_SRC} ${DirectXMath} ${D3DHelpers} ${ShaderFiles})
 target_link_libraries (LandingTrajectoryDX12 d3d12 dxgi d3dcompiler)
