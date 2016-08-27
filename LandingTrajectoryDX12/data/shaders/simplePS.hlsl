@@ -5,7 +5,13 @@
 // see license details in LICENSE.md file
 //-----------------------------------------------------------------------------
 // simple pixel shader
-float4 mainPS() : SV_TARGET
+struct VS_OUTPUT
 {
-	return float4(0.0f, 1.0f, 0.0f, 1.0f); // Red, Green, Blue, Alpha
+	float4 position: SV_POSITION;
+	float4 color: COLOR;
+};
+
+float4 mainPS(VS_OUTPUT input) : SV_TARGET
+{
+	return input.color;
 }
