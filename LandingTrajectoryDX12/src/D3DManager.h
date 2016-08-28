@@ -14,6 +14,9 @@
 #include <dxgi1_5.h>
 #include <windef.h> // for HWND dependency
 
+#include "Inc/DirectXMath.h"
+
+#include "GraphicsCommon.h"
 #include "Utils/Types.h"
 
 class D3DManager
@@ -53,6 +56,7 @@ private:
 	bool createPipelineState();
 	bool createBuffers();
 	bool createDepthStencilBuffers();
+	bool createConstantBuffers();
 	bool finalizeCreatedResources();
 	void prepareViewport();
 	// update/draw methods
@@ -65,6 +69,9 @@ private:
 	WString _videoCardDescription;
 	uInt _dedicatedVideoMemorySizeMBs;
 
+#if defined(DEBUG_GRAPHICS_ENABLED)
+	ID3D12Debug* _debugController;
+#endif
 	ID3D12Device* _device;
 	ID3D12CommandQueue* _commandQueue;
 	IDXGISwapChain3* _swapChain;
@@ -79,18 +86,29 @@ private:
 	Vector<ID3D12CommandAllocator*> _commandAllocators;
 	Vector<ID3D12Fence*> _fences;
 	Vector<UINT64> _fenceValues;
-
+	//pipeline
 	ID3D12PipelineState* _pipelineState;
 	ID3D12RootSignature* _rootSignature;
 	D3D12_VIEWPORT _viewport;
 	D3D12_RECT _scissorRect;
+	//vertex/index buffers
 	UINT _vertexBufferSize;
 	UINT _indexBufferSize;
 	ID3D12Resource* _vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 	ID3D12Resource* _indexBuffer;
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
-
+	//Depth/Stencil
 	ID3D12Resource* _depthStencilBuffer;
 	ID3D12DescriptorHeap* _depthStencilDescHeap;
+	//Constant buffer
+	struct ConstantBufferData
+	{
+		DirectX::XMFLOAT4 colorMultiplier;
+	};
+	Vector<ID3D12DescriptorHeap*> _mainCBDescriptorHeaps;
+	Vector<ID3D12Resource*> _constantBufferUploadHeaps;
+	ConstantBufferData _colorMultiplierData;
+	Vector<void*> _cbColorMultiplierGPUAddress;
+
 };

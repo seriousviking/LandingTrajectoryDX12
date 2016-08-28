@@ -5,12 +5,10 @@
 // see license details in LICENSE.md file
 //-----------------------------------------------------------------------------
 #include "D3DManager.h"
-#include "GraphicsCommon.h"
 #include "Utils/Log.h"
 #include "Utils/Macro.h"
 #include "Utils/FileUtils.h"
 
-#include "Inc/DirectXMath.h"
 #include "d3dx12.h"
 
 #include <d3dcompiler.h> // to compile shaders in run-time
@@ -34,6 +32,7 @@ namespace
 D3DManager::D3DManager() :
 	_frameBufferCount(3),
 	_dedicatedVideoMemorySizeMBs(0),
+	_debugController(nullptr),
 	_device(nullptr),
 	_commandQueue(nullptr),
 	_swapChain(nullptr),
@@ -110,6 +109,11 @@ bool D3DManager::init(const Def &def)
 		Log(L"createDepthStencilBuffers() failed");
 		return false;
 	}
+	if (!createConstantBuffers())
+	{
+		Log(L"createConstantBuffers() failed");
+		return false;
+	}
 	if (!finalizeCreatedResources())
 	{
 		Log(L"finalizeCreatedResources() failed");
@@ -144,6 +148,17 @@ void D3DManager::free()
 	{
 		Log(L"error closing fence event: %x", error);
 	}
+	// release upload buffers data
+	for (auto cbDescHeap : _mainCBDescriptorHeaps)
+	{
+		a_SAFE_RELEASE(cbDescHeap);
+	}
+	_mainCBDescriptorHeaps.clear();
+	for (auto cbUploadHeap : _constantBufferUploadHeaps)
+	{
+		a_SAFE_RELEASE(cbUploadHeap);
+	}
+	_constantBufferUploadHeaps.clear();
 	// release rendering objects
 	a_SAFE_RELEASE(_depthStencilBuffer);
 	a_SAFE_RELEASE(_depthStencilDescHeap);
@@ -173,10 +188,36 @@ void D3DManager::free()
 	a_SAFE_RELEASE(_commandQueue);
 
 	a_SAFE_RELEASE(_device);
+	a_SAFE_RELEASE(_debugController);
 }
 
 bool D3DManager::update()
 {
+	static float rIncrement = 0.00002f;
+	static float gIncrement = 0.00006f;
+	static float bIncrement = 0.00009f;
+
+	_colorMultiplierData.colorMultiplier.x += rIncrement;
+	_colorMultiplierData.colorMultiplier.y += gIncrement;
+	_colorMultiplierData.colorMultiplier.z += bIncrement;
+
+	if (_colorMultiplierData.colorMultiplier.x >= 1.0f || _colorMultiplierData.colorMultiplier.x <= 0.0f)
+	{
+		_colorMultiplierData.colorMultiplier.x = _colorMultiplierData.colorMultiplier.x >= 1.0f ? 1.0f : 0.0f;
+		rIncrement = -rIncrement;
+	}
+	if (_colorMultiplierData.colorMultiplier.y >= 1.0f || _colorMultiplierData.colorMultiplier.y <= 0.0f)
+	{
+		_colorMultiplierData.colorMultiplier.y = _colorMultiplierData.colorMultiplier.y >= 1.0f ? 1.0f : 0.0f;
+		gIncrement = -gIncrement;
+	}
+	if (_colorMultiplierData.colorMultiplier.z >= 1.0f || _colorMultiplierData.colorMultiplier.z <= 0.0f)
+	{
+		_colorMultiplierData.colorMultiplier.z = _colorMultiplierData.colorMultiplier.z >= 1.0f ? 1.0f : 0.0f;
+		bIncrement = -bIncrement;
+	}
+	// copy our ConstantBuffer instance to the mapped constant buffer resource
+	memcpy(_cbColorMultiplierGPUAddress[_bufferIndex], &_colorMultiplierData, sizeof(_colorMultiplierData));
 	return true;
 }
 
@@ -233,6 +274,16 @@ bool D3DManager::createDevice()
 {
 	HRESULT result;
 
+#if defined(DEBUG_GRAPHICS_ENABLED)
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&_debugController))))
+	{
+		_debugController->EnableDebugLayer();
+	}
+	else
+	{
+		Log(L"Failed to get D3D debug interface");
+	}
+#endif
 	// create device with specified feature level
 	D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_12_0;
 	// TODO: select adapter here
@@ -466,7 +517,7 @@ bool D3DManager::createRenderTargetViews()
 	// get the size of the memory location for the render target view descriptors
 	renderTargetViewDescriptorSize = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	// create render target views for all back buffers
-	_backBufferRenderTargets.resize(_frameBufferCount);
+	_backBufferRenderTargets.resize(_frameBufferCount, nullptr);
 	for (size_t targetIndex = 0; targetIndex < _frameBufferCount; ++targetIndex)
 	{
 		_backBufferRenderTargets[targetIndex] = nullptr;
@@ -497,7 +548,7 @@ bool D3DManager::createCommandList()
 {
 	HRESULT result;
 	_commandAllocators.clear();
-	_commandAllocators.resize(_frameBufferCount);
+	_commandAllocators.resize(_frameBufferCount, nullptr);
 	// create command allocator for each buffer
 	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
 	{
@@ -532,8 +583,8 @@ bool D3DManager::createSyncEvent()
 	HRESULT result;
 	_fences.clear();
 	_fenceValues.clear();
-	_fences.resize(_frameBufferCount);
-	_fenceValues.resize(_frameBufferCount);
+	_fences.resize(_frameBufferCount, nullptr);
+	_fenceValues.resize(_frameBufferCount, 0);
 	// create a fence for GPU synchronization
 	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
 	{
@@ -559,12 +610,36 @@ bool D3DManager::createRootSignature()
 {
 	HRESULT result;
 
-	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.NumParameters = 0;
-	rootSignatureDesc.pParameters = nullptr;
-	rootSignatureDesc.NumStaticSamplers = 0;
-	rootSignatureDesc.pStaticSamplers = nullptr;
-	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	// create a descriptor range (descriptor table) and fill it out
+	// this is a range of descriptors inside a descriptor heap
+	D3D12_DESCRIPTOR_RANGE  descriptorTableRanges[1]; // only one range right now
+	descriptorTableRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV; // this is a range of constant buffer views (descriptors)
+	descriptorTableRanges[0].NumDescriptors = 1; // we only have one constant buffer, so the range is only 1
+	descriptorTableRanges[0].BaseShaderRegister = 0; // start index of the shader registers in the range
+	descriptorTableRanges[0].RegisterSpace = 0; // space 0. can usually be zero
+	descriptorTableRanges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // this appends the range to the end of the root signature descriptor tables
+
+	// create a descriptor table
+	D3D12_ROOT_DESCRIPTOR_TABLE descriptorTable;
+	descriptorTable.NumDescriptorRanges = _countof(descriptorTableRanges); // we only have one range
+	descriptorTable.pDescriptorRanges = &descriptorTableRanges[0]; // the pointer to the beginning of our ranges array
+
+	// create a root parameter and fill it out
+	D3D12_ROOT_PARAMETER  rootParameters[1]; // only one parameter right now
+	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // this is a descriptor table
+	rootParameters[0].DescriptorTable = descriptorTable; // this is our descriptor table for this root parameter
+	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // our pixel shader will be the only shader accessing this parameter for now
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+	rootSignatureDesc.Init(_countof(rootParameters), // we have 1 root parameter
+		rootParameters, // a pointer to the beginning of our root parameters array
+		0,
+		nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | // we can deny shader stages here for better performance
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
 
 	ID3DBlob* signatureBlob;
 	result = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, nullptr);
@@ -735,16 +810,10 @@ bool D3DManager::createBuffers()
 	HRESULT result;
 	// triangle vertices
 	Vertex vertexList[] = {
-		// first quad (closer to camera, blue)
-		{ -0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
+		{ -0.5f,  0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
+		{ 0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
 		{ -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f,  0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		// second quad (further from camera, green)
-		{ -0.75f,  0.75f,  0.7f, 0.0f, 1.0f, 0.0f, 1.0f },
-		{ 0.0f,  0.0f, 0.7f, 0.0f, 1.0f, 0.0f, 1.0f },
-		{ -0.75f,  0.0f, 0.7f, 0.0f, 1.0f, 0.0f, 1.0f },
-		{ 0.0f,  0.75f,  0.7f, 0.0f, 1.0f, 0.0f, 1.0f }
+		{ 0.5f,  0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f }
 	};
 	DWORD indexList[] = { 
 		0, 1, 2, 0, 3, 1
@@ -914,6 +983,74 @@ bool D3DManager::createDepthStencilBuffers()
 	return true;
 }
 
+bool D3DManager::createConstantBuffers()
+{
+	HRESULT result;
+	_mainCBDescriptorHeaps.clear();
+	_mainCBDescriptorHeaps.resize(_frameBufferCount, nullptr);
+	// Create a constant buffer descriptor heap for each frame
+	// this is the descriptor heap that will store our constant buffer descriptor
+	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		result = _device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&_mainCBDescriptorHeaps[bufferIndex]));
+		if (FAILED(result))
+		{
+			Log(L"Failed to create descriptor heap for constant buffer: %08x", result);
+			return false;
+		}
+	}
+
+	// create the constant buffer resource heap
+	// We will update the constant buffer one or more times per frame, so we will use only an upload heap
+	// unlike previously we used an upload heap to upload the vertex and index data, and then copied over
+	// to a default heap. If you plan to use a resource for more than a couple frames, it is usually more
+	// efficient to copy to a default heap where it stays on the gpu. In this case, our constant buffer
+	// will be modified and uploaded at least once per frame, so we only use an upload heap
+	_constantBufferUploadHeaps.clear();
+	_constantBufferUploadHeaps.resize(_frameBufferCount, nullptr);
+	_cbColorMultiplierGPUAddress.clear();
+	_cbColorMultiplierGPUAddress.resize(_frameBufferCount, nullptr);
+	// create a resource heap, descriptor heap, and pointer to cbv for each frame
+	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
+	{
+		result = _device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), // this heap will be used to upload the constant buffer data
+			D3D12_HEAP_FLAG_NONE, // no flags
+			&CD3DX12_RESOURCE_DESC::Buffer(1024 * 64), // size of the resource heap. Must be a multiple of 64KB for single-textures and constant buffers
+			D3D12_RESOURCE_STATE_GENERIC_READ, // will be data that is read from so we keep it in the generic read state
+			nullptr, // we do not have use an optimized clear value for constant buffers
+			IID_PPV_ARGS(&_constantBufferUploadHeaps[bufferIndex]));
+		if (FAILED(result))
+		{
+			Log(L"Failed to create constant buffer upload heap %d: %08x", bufferIndex, result);
+			return false;
+		}
+		_constantBufferUploadHeaps[bufferIndex]->SetName(L"Constant Buffer Upload Resource Heap");
+
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+		cbvDesc.BufferLocation = _constantBufferUploadHeaps[bufferIndex]->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = (sizeof(ConstantBufferData) + 255) & ~255;    // CB size is required to be 256-byte aligned.
+		_device->CreateConstantBufferView(&cbvDesc, _mainCBDescriptorHeaps[bufferIndex]->GetCPUDescriptorHandleForHeapStart());
+
+		ZeroMemory(&_colorMultiplierData, sizeof(_colorMultiplierData));
+
+		CD3DX12_RANGE readRange(0, 0);    // We do not intend to read from this resource on the CPU. (End is less than or equal to begin)
+		result = _constantBufferUploadHeaps[bufferIndex]->Map(0, &readRange, reinterpret_cast<void**>(&_cbColorMultiplierGPUAddress[bufferIndex]));
+		if (FAILED(result))
+		{
+			Log(L"Failed to map constant buffer upload heap %d: %08x", bufferIndex, result);
+			return false;
+		}
+		memcpy(_cbColorMultiplierGPUAddress[bufferIndex], &_colorMultiplierData, sizeof(_colorMultiplierData));
+	}
+
+	return true;
+}
+
 bool D3DManager::finalizeCreatedResources()
 {
 	HRESULT result;
@@ -1024,14 +1161,17 @@ bool D3DManager::updatePipeline()
 	_commandList->ClearRenderTargetView(renderTargetViewHandle, clearColor, 0, nullptr);
 	_commandList->ClearDepthStencilView(depthStencilViewHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	// draw triangle
-	_commandList->SetGraphicsRootSignature(_rootSignature); // set the root signature
+	_commandList->SetGraphicsRootSignature(_rootSignature);
+	ID3D12DescriptorHeap* descriptorHeaps[] = { _mainCBDescriptorHeaps[_bufferIndex] };
+	_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	_commandList->SetGraphicsRootDescriptorTable(0, _mainCBDescriptorHeaps[_bufferIndex]->GetGPUDescriptorHandleForHeapStart());
+
 	_commandList->RSSetViewports(1, &_viewport); // set the viewports
 	_commandList->RSSetScissorRects(1, &_scissorRect); // set the scissor rects
 	_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // set the primitive topology
 	_commandList->IASetVertexBuffers(0, 1, &_vertexBufferView); // set the vertex buffer (using the vertex buffer view)
 	_commandList->IASetIndexBuffer(&_indexBufferView);
 	_commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-	_commandList->DrawIndexedInstanced(6, 1, 0, 4, 0);
 
 	// transition the "frameIndex" render target from the render target state to the present state. If the debug layer is enabled, you will receive a
 	// warning if present is called on the render target when it's not in the present state
