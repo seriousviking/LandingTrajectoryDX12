@@ -20,6 +20,18 @@
 #include "GraphicsCommon.h"
 #include "Utils/Types.h"
 
+struct ConstantBufferPerObject
+{
+	DirectX::XMFLOAT4X4 wvpMatrix;
+};
+
+struct CubeData
+{
+	DirectX::XMFLOAT4X4 worldMatrix;
+	DirectX::XMFLOAT4X4 rotationMatrix;
+	DirectX::XMFLOAT4   position;
+};
+
 class D3DManager
 {
 public:
@@ -62,6 +74,7 @@ private:
 	void cleanupUploadedResources();
 	bool closeMappedResources();
 	void prepareViewport();
+	void prepareCamera();
 	// update/draw methods
 	bool updatePipeline();
 	bool waitForPreviousFrame();
@@ -104,18 +117,21 @@ private:
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
 	ID3D12Resource* _vertexBufferUploadHeap;
 	ID3D12Resource* _indexBufferUploadHeap;
-
 	//Depth/Stencil
 	ID3D12Resource* _depthStencilBuffer;
 	ID3D12DescriptorHeap* _depthStencilDescHeap;
 	//Constant buffer
-	struct ConstantBufferData
-	{
-		DirectX::XMFLOAT4 colorMultiplier;
-	};
-	Vector<ID3D12DescriptorHeap*> _mainCBDescriptorHeaps;
+	ConstantBufferPerObject _constantBufferPerObject;
 	Vector<ID3D12Resource*> _constantBufferUploadHeaps;
-	ConstantBufferData _colorMultiplierData;
-	Vector<void*> _cbColorMultiplierGPUAddress;
-
+	Vector<BYTE*> _constantBufferPerObjectGPUAddress;
+	// camera matrices
+	DirectX::XMFLOAT4X4 _cameraProjectionMatrix;
+	DirectX::XMFLOAT4X4 _cameraViewMatrix;
+	// parameters for the view matrix
+	DirectX::XMFLOAT4 _cameraPosition;
+	DirectX::XMFLOAT4 _cameraTarget;
+	DirectX::XMFLOAT4 _cameraUp;
+	// cubes to draw
+	Vector<CubeData> _cubes;
+	UINT _numCubeIndices;
 };

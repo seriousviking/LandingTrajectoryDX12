@@ -19,13 +19,13 @@ struct VS_OUTPUT
 
 cbuffer ConstantBuffer : register(b0)
 {
-	float4 colorMultiplier;
+	float4x4 wvpMatrix;
 };
 
 VS_OUTPUT mainVS(VS_INPUT input)
 {
 	VS_OUTPUT output;
-	output.position = float4(input.position, 1.0f);
-	output.color = input.color * colorMultiplier;
+	output.position = mul(float4(input.position, 1.0), wvpMatrix);
+	output.color = input.color;
 	return output;
 }
