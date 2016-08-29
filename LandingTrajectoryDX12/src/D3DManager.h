@@ -13,6 +13,7 @@
 #include <d3d12.h>
 #include <dxgi1_5.h>
 #include <windef.h> // for HWND dependency
+#include <wrl/client.h> // for Microsoft::WRL::ComPtr
 
 #include "Inc/DirectXMath.h"
 
@@ -75,7 +76,7 @@ private:
 #if DEBUG_GRAPHICS_ENABLED
 	ID3D12Debug* _debugController;
 #endif
-	ID3D12Device* _device;
+	ID3D12Device* _device; // TODO: move to ComPtr<>
 	ID3D12CommandQueue* _commandQueue;
 	IDXGISwapChain3* _swapChain;
 	ID3D12DescriptorHeap* _renderTargetViewHeap;

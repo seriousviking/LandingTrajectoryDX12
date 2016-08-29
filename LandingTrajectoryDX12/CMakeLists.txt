@@ -97,7 +97,7 @@ endif()
 # add DirectXMath library
 
 set (DIRECTXMATH_PATH "../Lib/DirectXMath")
-set (DirectXMath
+set (DirectXMathInc
 	${DIRECTXMATH_PATH}/Inc/DirectXCollision.h
 	${DIRECTXMATH_PATH}/Inc/DirectXColors.h
 	${DIRECTXMATH_PATH}/Inc/DirectXMath.h
@@ -109,10 +109,26 @@ set (DirectXMath
 	${DIRECTXMATH_PATH}/Inc/DirectXMathVector.inl
 	${DIRECTXMATH_PATH}/Inc/DirectXPackedVector.inl
 )
+set (DirectXMathExtensions
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathAVX.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathAVX2.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathBE.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathF16C.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathFMA3.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathFMA4.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathSSE3.h
+	${DIRECTXMATH_PATH}/Extensions/DirectXMathSSE4.h
+)
+set (DirectXMath
+	${DirectXMathInc}
+	${DirectXMathExtensions}
+)
 if (MSVC)
-	source_group( Lib\\DirectXMath FILES ${DirectXMath} )
+	source_group( Lib\\DirectXMath\\Inc FILES ${DirectXMathInc} )
+	source_group( Lib\\DirectXMath\\Extensions FILES ${DirectXMathExtensions} )
 else()
-	source_group( Lib/DirectXMath FILES ${DirectXMath} )
+	source_group( Lib/DirectXMath/Inc FILES ${DirectXMathInc} )
+	source_group( Lib/DirectXMath/Extensions FILES ${DirectXMathExtensions} )
 endif()
 include_directories(${DIRECTXMATH_PATH})
 
