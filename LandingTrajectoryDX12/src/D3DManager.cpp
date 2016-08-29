@@ -1151,7 +1151,6 @@ bool D3DManager::updatePipeline()
 	renderTargetViewHandle.ptr += _bufferIndex * renderTargetViewDescriptorSize;
 	// get a handle to the depth/stencil buffer
 	auto depthStencilViewHandle = _depthStencilDescHeap->GetCPUDescriptorHandleForHeapStart();
-	//CD3DX12_CPU_DESCRIPTOR_HANDLE depthStencilViewHandle???(depthStencilViewHandle);
 
 	// set the render target for the output merger stage (the output of the pipeline)
 	_commandList->OMSetRenderTargets(1, &renderTargetViewHandle, FALSE, &depthStencilViewHandle);
@@ -1162,9 +1161,10 @@ bool D3DManager::updatePipeline()
 	_commandList->ClearDepthStencilView(depthStencilViewHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	// draw triangle
 	_commandList->SetGraphicsRootSignature(_rootSignature);
-	ID3D12DescriptorHeap* descriptorHeaps[] = { _mainCBDescriptorHeaps[_bufferIndex] };
+	auto selectedCBDescHeap = _mainCBDescriptorHeaps[_bufferIndex];
+	ID3D12DescriptorHeap* descriptorHeaps[] = { selectedCBDescHeap };
 	_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-	_commandList->SetGraphicsRootDescriptorTable(0, _mainCBDescriptorHeaps[_bufferIndex]->GetGPUDescriptorHandleForHeapStart());
+	_commandList->SetGraphicsRootDescriptorTable(0, selectedCBDescHeap->GetGPUDescriptorHandleForHeapStart());
 
 	_commandList->RSSetViewports(1, &_viewport); // set the viewports
 	_commandList->RSSetScissorRects(1, &_scissorRect); // set the scissor rects

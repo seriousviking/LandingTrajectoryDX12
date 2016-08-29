@@ -40,7 +40,21 @@ void GraphicsManager::free()
 
 bool GraphicsManager::processFrame()
 {
+	if (!update())
+	{
+		return false;
+	}
 	if (!render())
+	{
+		return false;
+	}
+	return true;
+}
+
+bool GraphicsManager::update()
+{
+	assert(_d3dManager);
+	if (!_d3dManager->update())
 	{
 		return false;
 	}

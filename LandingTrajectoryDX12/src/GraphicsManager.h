@@ -20,6 +20,7 @@ public:
 	bool processFrame();
 
 private:
+	bool update();
 	bool render();
 
 private:
