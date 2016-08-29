@@ -32,6 +32,7 @@ namespace
 D3DManager::D3DManager() :
 	_frameBufferCount(3),
 	_dedicatedVideoMemorySizeMBs(0),
+	_initializationFrame(false),
 	_debugController(nullptr),
 	_device(nullptr),
 	_commandQueue(nullptr),
@@ -46,6 +47,8 @@ D3DManager::D3DManager() :
 	_indexBuffer(nullptr),
 	_vertexBufferSize(0),
 	_indexBufferSize(0),
+	_vertexBufferUploadHeap(nullptr),
+	_indexBufferUploadHeap(nullptr),
 	_depthStencilBuffer(nullptr),
 	_depthStencilDescHeap(nullptr)
 {
@@ -120,6 +123,7 @@ bool D3DManager::init(const Def &def)
 		return false;
 	}
 	prepareViewport();
+	_initializationFrame = true;
 	return true;
 }
 
@@ -132,7 +136,10 @@ void D3DManager::free()
 	//{
 	//	waitForPreviousFrame();
 	//}
-
+	if (!closeMappedResources())
+	{
+		Log(L"Error in closeMappedResources()");
+	}
 	// get swapchain out of full screen before exiting
 	if (_swapChain)
 	{
@@ -274,7 +281,7 @@ bool D3DManager::createDevice()
 {
 	HRESULT result;
 
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&_debugController))))
 	{
 		_debugController->EnableDebugLayer();
@@ -408,10 +415,8 @@ bool D3DManager::createSwapchain()
 	Log(L"Selected adapter: '%ls' Memory: %d MB", _videoCardDescription.c_str(), _dedicatedVideoMemorySizeMBs);
 	
 	// release DXGI interfaces
-	selectedAdapterOutput->Release();
-	selectedAdapterOutput = nullptr;
-	dxgiAdapter->Release();
-	dxgiAdapter = nullptr;
+	a_SAFE_RELEASE(selectedAdapterOutput);
+	a_SAFE_RELEASE(dxgiAdapter);
 	// prepare swapchain
 	DXGI_SWAP_CHAIN_DESC swapChainDesc;
 	// fill the swap chain description
@@ -482,10 +487,9 @@ bool D3DManager::createSwapchain()
 		return false;
 	}
 	// clear pointer to original swap chain interface
-	swapChain = nullptr;
+	a_SAFE_RELEASE(swapChain);
 	// release the factory now that the swap chain has been created
-	dxgiFactory->Release();
-	dxgiFactory = nullptr;
+	a_SAFE_RELEASE(dxgiFactory);
 
 	return true;
 }
@@ -663,7 +667,7 @@ bool D3DManager::createPipelineState()
 
 	D3D12_SHADER_BYTECODE vertexShaderBytecode = {};
 	D3D12_SHADER_BYTECODE pixelShaderBytecode = {};
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	// compile vertex shader
 	ID3DBlob* vertexShader = nullptr;
 	ID3DBlob* errorBuff = nullptr;
@@ -837,28 +841,27 @@ bool D3DManager::createBuffers()
 		Log(L"Failed to create vertex buffer: %08x", result);
 		return false;
 	}
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	_vertexBuffer->SetName(L"Vertex Buffer Resource Heap");
 #endif
 
 	// create upload heap
 	auto uploadHeapDesc = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	ID3D12Resource* vertexBufferUploadHeap;
 	result = _device->CreateCommittedResource(
 		&uploadHeapDesc, // upload heap
 		D3D12_HEAP_FLAG_NONE, // no flags
 		&CD3DX12_RESOURCE_DESC::Buffer(_vertexBufferSize), // resource description for a buffer
 		D3D12_RESOURCE_STATE_GENERIC_READ, // GPU will read from this buffer and copy its contents to the default heap
 		nullptr,
-		IID_PPV_ARGS(&vertexBufferUploadHeap));
+		IID_PPV_ARGS(&_vertexBufferUploadHeap));
 	if (FAILED(result))
 	{
 		Log(L"Failed to create upload vertex buffer: %08x", result);
 		return false;
 	}
 
-#if defined(DEBUG_GRAPHICS_ENABLED)
-	vertexBufferUploadHeap->SetName(L"Vertex Buffer Upload Resource Heap");
+#if DEBUG_GRAPHICS_ENABLED
+	_vertexBufferUploadHeap->SetName(L"Vertex Buffer Upload Resource Heap");
 #endif
 
 	// buffer heaps created, now we need to upload data to GPU
@@ -871,7 +874,7 @@ bool D3DManager::createBuffers()
 	// we are now creating a command with the command list to copy the data from
 	// the upload heap to the default heap
 	// for simplicity, using the function UpdateSubresources(...) from d3dx12 library
-	UpdateSubresources(_commandList, _vertexBuffer, vertexBufferUploadHeap, 0, 0, 1, &vertexData);
+	UpdateSubresources(_commandList, _vertexBuffer, _vertexBufferUploadHeap, 0, 0, 1, &vertexData);
 
 	// transition the vertex buffer data from copy destination state to vertex buffer state
 	D3D12_RESOURCE_BARRIER barrier;
@@ -897,26 +900,25 @@ bool D3DManager::createBuffers()
 		Log(L"Failed to create index buffer: %08x", result);
 		return false;
 	}
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	_indexBuffer->SetName(L"Index Buffer Resource Heap");
 #endif
 
 	// create upload heap to upload index buffer
-	ID3D12Resource* indexBufferUploadHeap;
 	_device->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), // upload heap
 		D3D12_HEAP_FLAG_NONE, // no flags
 		&CD3DX12_RESOURCE_DESC::Buffer(_indexBufferSize), // resource description for a buffer
 		D3D12_RESOURCE_STATE_GENERIC_READ, // GPU will read from this buffer and copy its contents to the default heap
 		nullptr,
-		IID_PPV_ARGS(&indexBufferUploadHeap));
+		IID_PPV_ARGS(&_indexBufferUploadHeap));
 	if (FAILED(result))
 	{
 		Log(L"Failed to create upload index buffer: %08x", result);
 		return false;
 	}
-#if defined(DEBUG_GRAPHICS_ENABLED)
-	indexBufferUploadHeap->SetName(L"Index Buffer Upload Resource Heap");
+#if DEBUG_GRAPHICS_ENABLED
+	_indexBufferUploadHeap->SetName(L"Index Buffer Upload Resource Heap");
 #endif
 	// store index buffer in upload heap
 	D3D12_SUBRESOURCE_DATA indexData = {};
@@ -925,7 +927,7 @@ bool D3DManager::createBuffers()
 	indexData.SlicePitch = _indexBufferSize; // also the size of our index buffer
 										// we are now creating a command with the command list to copy the data from
 										// the upload heap to the default heap
-	UpdateSubresources(_commandList, _indexBuffer, indexBufferUploadHeap, 0, 0, 1, &indexData);
+	UpdateSubresources(_commandList, _indexBuffer, _indexBufferUploadHeap, 0, 0, 1, &indexData);
 
 	// transition the vertex buffer data from copy destination state to vertex buffer state
 	auto indexTransitionBarrier =
@@ -974,7 +976,7 @@ bool D3DManager::createDepthStencilBuffers()
 		Log("Failed to create descriptor heap for depth-stencil buffer view: %08x", result);
 		return false;
 	}
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	_depthStencilDescHeap->SetName(L"Depth/Stencil Resource Heap");
 #endif
 
@@ -1077,6 +1079,22 @@ bool D3DManager::finalizeCreatedResources()
 	_indexBufferView.BufferLocation = _indexBuffer->GetGPUVirtualAddress();
 	_indexBufferView.Format = DXGI_FORMAT_R32_UINT; // 32-bit unsigned integer (this is what a dword is, double word, a word is 2 bytes)
 	_indexBufferView.SizeInBytes = _indexBufferSize;
+
+	return true;
+}
+
+void D3DManager::cleanupUploadedResources()
+{
+	a_SAFE_RELEASE(_vertexBufferUploadHeap);
+	a_SAFE_RELEASE(_indexBufferUploadHeap);
+}
+
+bool D3DManager::closeMappedResources()
+{
+	for (UINT bufferIndex = 0; bufferIndex < _frameBufferCount; ++bufferIndex)
+	{
+		_constantBufferUploadHeaps[bufferIndex]->Unmap(0, nullptr);
+	}
 	return true;
 }
 
@@ -1104,6 +1122,11 @@ bool D3DManager::updatePipeline()
 	{
 		Log(L"waitForPreviousFrame() failed");
 		return false;
+	}
+	if (_initializationFrame)
+	{
+		cleanupUploadedResources();
+		_initializationFrame = false;
 	}
 	// we can only reset an allocator once the gpu is done with it
 	// resetting an allocator frees the memory that the command list was stored in

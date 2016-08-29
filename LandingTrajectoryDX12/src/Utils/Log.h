@@ -7,7 +7,7 @@
 #pragma once
 #include "Types.h"
 
-#if !defined(NDEBUG) || defined(_DEBUG)
+#if !defined(NDEBUG) || _DEBUG
 #define DEBUG_LOG_ENABLED 1
 #endif
 

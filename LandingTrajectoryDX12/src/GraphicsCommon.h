@@ -5,6 +5,6 @@
 // see license details in LICENSE.md file
 //-----------------------------------------------------------------------------
 
-#if !defined(NDEBUG) || defined(_DEBUG)
+#if !defined(NDEBUG) || _DEBUG
 #define DEBUG_GRAPHICS_ENABLED 1
 #endif

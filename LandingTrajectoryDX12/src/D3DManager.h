@@ -58,6 +58,8 @@ private:
 	bool createDepthStencilBuffers();
 	bool createConstantBuffers();
 	bool finalizeCreatedResources();
+	void cleanupUploadedResources();
+	bool closeMappedResources();
 	void prepareViewport();
 	// update/draw methods
 	bool updatePipeline();
@@ -68,8 +70,9 @@ private:
 	UINT _frameBufferCount;
 	WString _videoCardDescription;
 	uInt _dedicatedVideoMemorySizeMBs;
+	bool _initializationFrame;
 
-#if defined(DEBUG_GRAPHICS_ENABLED)
+#if DEBUG_GRAPHICS_ENABLED
 	ID3D12Debug* _debugController;
 #endif
 	ID3D12Device* _device;
@@ -98,6 +101,9 @@ private:
 	D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 	ID3D12Resource* _indexBuffer;
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
+	ID3D12Resource* _vertexBufferUploadHeap;
+	ID3D12Resource* _indexBufferUploadHeap;
+
 	//Depth/Stencil
 	ID3D12Resource* _depthStencilBuffer;
 	ID3D12DescriptorHeap* _depthStencilDescHeap;
