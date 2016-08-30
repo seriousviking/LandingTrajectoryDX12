@@ -76,6 +76,9 @@ set (main_SRC
 	src/D3DManager.h
 	src/D3DManager.cpp
 	src/GraphicsCommon.h
+	src/ImageLoader.h
+	src/ImageLoader.cpp
+	src/Image.h
 )
 source_group( src FILES ${main_SRC} )
 

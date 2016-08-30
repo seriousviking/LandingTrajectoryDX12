@@ -18,6 +18,7 @@
 #include "Inc/DirectXMath.h"
 
 #include "GraphicsCommon.h"
+#include "Image.h"
 #include "Utils/Types.h"
 
 struct ConstantBufferPerObject
@@ -70,6 +71,7 @@ private:
 	bool createBuffers();
 	bool createDepthStencilBuffers();
 	bool createConstantBuffers();
+	bool createTexture();
 	bool finalizeCreatedResources();
 	void cleanupUploadedResources();
 	bool closeMappedResources();
@@ -103,12 +105,12 @@ private:
 	Vector<ID3D12CommandAllocator*> _commandAllocators;
 	Vector<ID3D12Fence*> _fences;
 	Vector<UINT64> _fenceValues;
-	//pipeline
+	// pipeline
 	ID3D12PipelineState* _pipelineState;
 	ID3D12RootSignature* _rootSignature;
 	D3D12_VIEWPORT _viewport;
 	D3D12_RECT _scissorRect;
-	//vertex/index buffers
+	// vertex/index buffers
 	UINT _vertexBufferSize;
 	UINT _indexBufferSize;
 	ID3D12Resource* _vertexBuffer;
@@ -117,13 +119,18 @@ private:
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
 	ID3D12Resource* _vertexBufferUploadHeap;
 	ID3D12Resource* _indexBufferUploadHeap;
-	//Depth/Stencil
+	// depth/Stencil
 	ID3D12Resource* _depthStencilBuffer;
 	ID3D12DescriptorHeap* _depthStencilDescHeap;
-	//Constant buffer
+	// constant buffer
 	ConstantBufferPerObject _constantBufferPerObject;
 	Vector<ID3D12Resource*> _constantBufferUploadHeaps;
 	Vector<BYTE*> _constantBufferPerObjectGPUAddress;
+	// texture data
+	ID3D12Resource* _textureBuffer;
+	ID3D12DescriptorHeap* _textureDescriptorHeap;
+	ID3D12Resource* _textureBufferUploadHeap;
+	SharedPtr<Image> _textureImage;
 	// camera matrices
 	DirectX::XMFLOAT4X4 _cameraProjectionMatrix;
 	DirectX::XMFLOAT4X4 _cameraViewMatrix;

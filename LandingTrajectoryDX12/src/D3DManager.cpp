@@ -5,14 +5,16 @@
 // see license details in LICENSE.md file
 //-----------------------------------------------------------------------------
 #include "D3DManager.h"
-#include "Utils/Log.h"
-#include "Utils/Macro.h"
-#include "Utils/FileUtils.h"
-
-#include "d3dx12.h"
 
 #include <d3dcompiler.h> // to compile shaders in run-time
 #include <synchapi.h>// for events
+
+#include "d3dx12.h"
+
+#include "Utils/Log.h"
+#include "Utils/Macro.h"
+#include "Utils/FileUtils.h"
+#include "ImageLoader.h"
 
 namespace
 {
@@ -22,10 +24,10 @@ namespace
 	struct Vertex
 	{
 		Vertex() {}
-		Vertex(float x, float y, float z, float r, float g, float b, float a) : position(x, y, z), color(r, g, b, a) {}
+		Vertex(float x, float y, float z, float u, float v) : position(x, y, z), texCoord(u, v) {}
 
 		DirectX::XMFLOAT3 position;
-		DirectX::XMFLOAT4 color;
+		DirectX::XMFLOAT2 texCoord;
 	};
 
 	int ConstantBufferPerObjectAlignedSize = (sizeof(ConstantBufferPerObject) + 255) & ~255;
@@ -51,6 +53,9 @@ D3DManager::D3DManager() :
 	_indexBufferSize(0),
 	_vertexBufferUploadHeap(nullptr),
 	_indexBufferUploadHeap(nullptr),
+	_textureBuffer(nullptr),
+	_textureDescriptorHeap(nullptr),
+	_textureBufferUploadHeap(nullptr),
 	_depthStencilBuffer(nullptr),
 	_depthStencilDescHeap(nullptr)
 {
@@ -119,6 +124,11 @@ bool D3DManager::init(const Def &def)
 		Log(L"createConstantBuffers() failed");
 		return false;
 	}
+	if (!createTexture())
+	{
+		Log(L"createTexture() failed");
+		return false;
+	}
 	if (!finalizeCreatedResources())
 	{
 		Log(L"finalizeCreatedResources() failed");
@@ -165,6 +175,8 @@ void D3DManager::free()
 	}
 	_constantBufferUploadHeaps.clear();
 	// release rendering objects
+	a_SAFE_RELEASE(_textureBuffer);
+	a_SAFE_RELEASE(_textureDescriptorHeap);
 	a_SAFE_RELEASE(_depthStencilBuffer);
 	a_SAFE_RELEASE(_depthStencilDescHeap);
 	a_SAFE_RELEASE(_vertexBuffer);
@@ -655,21 +667,56 @@ bool D3DManager::createRootSignature()
 	rootCBVDescriptor.RegisterSpace = 0;
 	rootCBVDescriptor.ShaderRegister = 0;
 	// create a root parameter and fill it out
-	D3D12_ROOT_PARAMETER  rootParameters[1]; // only one parameter right now
+	D3D12_ROOT_PARAMETER  rootParameters[2]; // only one parameter right now
+	// first item is a constant buffer
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // this is a constant buffer view root descriptor
 	rootParameters[0].Descriptor = rootCBVDescriptor; // this is the root descriptor for this root parameter
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // our pixel shader will be the only shader accessing this parameter for now
-
+	// second item is a texture descriptor
+	// create a descriptor range (descriptor table) and fill it out
+	// this is a range of descriptors inside a descriptor heap
+	D3D12_DESCRIPTOR_RANGE  descriptorTableRanges[1]; // only one range right now
+	descriptorTableRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // this is a range of shader resource views (descriptors)
+	descriptorTableRanges[0].NumDescriptors = 1; // we only have one texture right now, so the range is only 1
+	descriptorTableRanges[0].BaseShaderRegister = 0; // start index of the shader registers in the range
+	descriptorTableRanges[0].RegisterSpace = 0; // space 0. can usually be zero
+	// this appends the range to the end of the root signature descriptor tables
+	descriptorTableRanges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	// create a descriptor table
+	D3D12_ROOT_DESCRIPTOR_TABLE descriptorTable;
+	descriptorTable.NumDescriptorRanges = _countof(descriptorTableRanges); // we only have one range
+	descriptorTable.pDescriptorRanges = &descriptorTableRanges[0]; // the pointer to the beginning of our ranges array
+	// fill out the parameter for our descriptor table. Remember it's a good idea to sort parameters by frequency of change. Our constant
+	// buffer will be changed multiple times per frame, while our descriptor table will not be changed at all (in this tutorial)
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // this is a descriptor table
+	rootParameters[1].DescriptorTable = descriptorTable; // this is our descriptor table for this root parameter
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // our pixel shader will be the only shader accessing this parameter for now
+	// static sampler
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.MipLODBias = 0;
+	sampler.MaxAnisotropy = 0;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+	sampler.MinLOD = 0.0f;
+	sampler.MaxLOD = D3D12_FLOAT32_MAX;
+	sampler.ShaderRegister = 0;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	// root signature
 	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
 	rootSignatureDesc.Init(_countof(rootParameters), // we have 1 root parameter
 		rootParameters, // a pointer to the beginning of our root parameters array
-		0,
-		nullptr,
+		1,
+		&sampler,
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | // we can deny shader stages here for better performance
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
+	);
 
 	ID3DBlob* signatureBlob;
 	result = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, nullptr);
@@ -773,7 +820,7 @@ bool D3DManager::createPipelineState()
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 	// fill out an input layout description structure
 	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc = {};
@@ -841,35 +888,40 @@ bool D3DManager::createBuffers()
 	// triangle vertices
 	Vector<Vertex> vertexList = {
 		// front face
-		{ -0.5f,  0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ -0.5f,  0.5f, -0.5f, 0.0f, 0.0f },
+		{ 0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
+		{ -0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
+		{ 0.5f,  0.5f, -0.5f, 1.0f, 0.0f },
+
 		// right side face
-		{ 0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ 0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
+		{ 0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
+		{ 0.5f, -0.5f,  0.5f, 1.0f, 1.0f },
+		{ 0.5f,  0.5f, -0.5f, 0.0f, 0.0f },
+
 		// left side face
-		{ -0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ -0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
+		{ -0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
+		{ -0.5f, -0.5f,  0.5f, 0.0f, 1.0f },
+		{ -0.5f,  0.5f, -0.5f, 1.0f, 0.0f },
+
 		// back face
-		{ 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ -0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ 0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
+		{ -0.5f, -0.5f,  0.5f, 1.0f, 1.0f },
+		{ 0.5f, -0.5f,  0.5f, 0.0f, 1.0f },
+		{ -0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
+
 		// top face
-		{ -0.5f,  0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ 0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f,  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ -0.5f,  0.5f, -0.5f, 0.0f, 1.0f },
+		{ 0.5f,  0.5f,  0.5f, 1.0f, 0.0f },
+		{ 0.5f,  0.5f, -0.5f, 1.0f, 1.0f },
+		{ -0.5f,  0.5f,  0.5f, 0.0f, 0.0f },
+
 		// bottom face
-		{ 0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f, 1.0f },
-		{ -0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 1.0f },
-		{ 0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 1.0f },
-		{ -0.5f, -0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ 0.5f, -0.5f,  0.5f, 0.0f, 0.0f },
+		{ -0.5f, -0.5f, -0.5f, 1.0f, 1.0f },
+		{ 0.5f, -0.5f, -0.5f, 0.0f, 1.0f },
+		{ -0.5f, -0.5f,  0.5f, 1.0f, 0.0f },
 	};
 	Vector<DWORD> indexList = { 
 		// front face
@@ -1103,6 +1155,105 @@ bool D3DManager::createConstantBuffers()
 	return true;
 }
 
+bool D3DManager::createTexture()
+{
+	HRESULT result;
+
+	ImageLoader loader;
+	ImageLoader::ConvertOptions options;
+	_textureImage = loader.loadImageFromFile(L"../data/textures/test512.png", options);
+	if (!_textureImage)
+	{
+		Log(L"Couldn't load texture from file");
+		return false;
+	}
+	// Load the image from file
+	int imageBytesPerPixel = _textureImage->bytesPerPixel;
+	int imageBytesPerRow = _textureImage->bytesPerRow;
+	BYTE* imageData = _textureImage->pixels;
+
+	D3D12_RESOURCE_DESC textureDesc;
+	// now describe the texture with the information we have obtained from the image
+	textureDesc = {};
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	textureDesc.Alignment = 0; // may be 0, 4KB, 64KB, or 4MB. 0 will let runtime decide between 64KB and 4MB (4MB for multi-sampled textures)
+	textureDesc.Width = _textureImage->width; // width of the texture
+	textureDesc.Height = _textureImage->height; // height of the texture
+	textureDesc.DepthOrArraySize = 1; // if 3d image, depth of 3d image. Otherwise an array of 1D or 2D textures (we only have one image, so we set 1)
+	textureDesc.MipLevels = 1; // Number of mipmaps. We are not generating mipmaps for this texture, so we have only one level
+	textureDesc.Format = _textureImage->format; // This is the dxgi format of the image (format of the pixels)
+	textureDesc.SampleDesc.Count = 1; // This is the number of samples per pixel, we just want 1 sample
+	textureDesc.SampleDesc.Quality = 0; // The quality level of the samples. Higher is better quality, but worse performance
+	textureDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; // The arrangement of the pixels. Setting to unknown lets the driver choose the most efficient one
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE; // no flags
+
+	// create a default heap where the upload heap will copy its contents into (contents being the texture)
+	result = _device->CreateCommittedResource(
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), // a default heap
+		D3D12_HEAP_FLAG_NONE, // no flags
+		&textureDesc, // the description of our texture
+		D3D12_RESOURCE_STATE_COPY_DEST, // We will copy the texture from the upload heap to here, so we start it out in a copy dest state
+		nullptr, // used for render targets and depth/stencil buffers
+		IID_PPV_ARGS(&_textureBuffer));
+	if (FAILED(result))
+	{
+		Log(L"Error creating texture default heap: %08x", result);
+		return false;
+	}
+	_textureBuffer->SetName(L"Texture Buffer Resource Heap");
+
+	// this function gets the size an upload buffer needs to be to upload a texture to the gpu.
+	// each row must be 256 byte aligned except for the last row, which can just be the size in bytes of the row
+	//int textureHeapSize = ((((_textureImage->width * imageBytesPerPixel) + 255) & ~255) * (_textureImage->height - 1)) + (_textureImage->width * imageBytesPerPixel);
+	UINT64 textureUploadBufferSize = 0;
+	_device->GetCopyableFootprints(&textureDesc, 0, 1, 0, nullptr, nullptr, nullptr, &textureUploadBufferSize);
+	// now we create an upload heap to upload our texture to the GPU
+	result = _device->CreateCommittedResource(
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), // upload heap
+		D3D12_HEAP_FLAG_NONE, // no flags
+		&CD3DX12_RESOURCE_DESC::Buffer(textureUploadBufferSize), // resource description for a buffer (storing the image data in this heap just to copy to the default heap)
+		D3D12_RESOURCE_STATE_GENERIC_READ, // We will copy the contents from this heap to the default heap above
+		nullptr,
+		IID_PPV_ARGS(&_textureBufferUploadHeap));
+	if (FAILED(result))
+	{
+		Log(L"Failed to create texture buffer upload heap: %08x", result);
+		return false;
+	}
+	_textureBufferUploadHeap->SetName(L"Texture Buffer Upload Resource Heap");
+
+	// store vertex buffer in upload heap
+	D3D12_SUBRESOURCE_DATA textureData = {};
+	textureData.pData = &imageData[0]; // pointer to our image data
+	textureData.RowPitch = imageBytesPerRow; // row size in bytes
+	textureData.SlicePitch = imageBytesPerRow * textureDesc.Height; // slice size (the whole 2d texture in our case)
+	// Now we copy the upload buffer contents to the default heap
+	UpdateSubresources(_commandList, _textureBuffer, _textureBufferUploadHeap, 0, 0, 1, &textureData);
+	// transition the texture default heap to a pixel shader resource (we will be sampling from this heap in the pixel shader to get the color of pixels)
+	auto transition = CD3DX12_RESOURCE_BARRIER::Transition(_textureBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	_commandList->ResourceBarrier(1, &transition);
+
+	// create the descriptor heap that will store our srv
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+	heapDesc.NumDescriptors = 1;
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	result = _device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&_textureDescriptorHeap));
+	if (FAILED(result))
+	{
+		Log(L"Failed to create texture SRV descriptor heap: %08x", result);
+	}
+	// now we create a shader resource view (descriptor that points to the texture and describes it)
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = textureDesc.Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = 1;
+	_device->CreateShaderResourceView(_textureBuffer, &srvDesc, _textureDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	return true;
+}
+
 bool D3DManager::finalizeCreatedResources()
 {
 	HRESULT result;
@@ -1137,6 +1288,8 @@ void D3DManager::cleanupUploadedResources()
 {
 	a_SAFE_RELEASE(_vertexBufferUploadHeap);
 	a_SAFE_RELEASE(_indexBufferUploadHeap);
+	a_SAFE_RELEASE(_textureBufferUploadHeap);
+	_textureImage.reset();
 }
 
 bool D3DManager::closeMappedResources()
@@ -1271,6 +1424,12 @@ bool D3DManager::updatePipeline()
 	_commandList->ClearDepthStencilView(depthStencilViewHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	
 	_commandList->SetGraphicsRootSignature(_rootSignature);
+
+	// set the descriptor heap
+	ID3D12DescriptorHeap* descriptorHeaps[] = { _textureDescriptorHeap };
+	_commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	// set the descriptor table to the descriptor heap (parameter 1, as constant buffer root descriptor is parameter index 0)
+	_commandList->SetGraphicsRootDescriptorTable(1, _textureDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	_commandList->RSSetViewports(1, &_viewport); // set the viewports
 	_commandList->RSSetScissorRects(1, &_scissorRect); // set the scissor rects

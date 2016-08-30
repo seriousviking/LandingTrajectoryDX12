@@ -8,13 +8,13 @@
 struct VS_INPUT
 {
 	float3 position : POSITION;
-	float4 color: COLOR;
+	float2 texCoord : TEXCOORD;
 };
 
 struct VS_OUTPUT
 {
 	float4 position: SV_POSITION;
-	float4 color: COLOR;
+	float2 texCoord: TEXCOORD;
 };
 
 cbuffer ConstantBuffer : register(b0)
@@ -26,6 +26,6 @@ VS_OUTPUT mainVS(VS_INPUT input)
 {
 	VS_OUTPUT output;
 	output.position = mul(float4(input.position, 1.0), wvpMatrix);
-	output.color = input.color;
+	output.texCoord = input.texCoord;
 	return output;
 }
